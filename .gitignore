@@ -1,0 +1,11 @@
+node_modules/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# Stored authentication state — never commit session cookies.
+playwright/.auth/
+
+.env
+.env.local

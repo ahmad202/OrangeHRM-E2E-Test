@@ -1,0 +1,152 @@
+name: E2E
+
+# Manual only, by design.
+#
+# The default target is a shared public OrangeHRM demo, so running on every push
+# would hammer a resource other people depend on and produce noisy, data-driven
+# failures. Add automatic triggers once this points at an instance you own:
+#
+#   push:
+#     branches: [main]
+#   schedule:
+#     - cron: '0 6 * * 1-5'
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: 'Which tests to run'
+        type: choice
+        default: read-only
+        options:
+          - read-only # everything except the write-path workflows
+          - smoke # @smoke — critical path only
+          - journeys # @journey — business journeys
+          - functional # screen-level specs, no journeys
+          - workflows # @workflow — write path, needs allow_writes
+      browser:
+        description: 'Browser project'
+        type: choice
+        default: chromium
+        options: [chromium, firefox, webkit, all]
+      base_url:
+        description: 'Target instance (blank = public OrangeHRM demo)'
+        type: string
+        default: ''
+      allow_writes:
+        description: 'Enable write-path specs (rejected against the public demo)'
+        type: boolean
+        default: false
+
+# Queue overlapping runs rather than cancelling them. Against a shared instance,
+# two concurrent runs slow each other down and cause flake; against your own,
+# a cancelled run can leave write-path fixtures half cleaned up.
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    name: ${{ inputs.suite }} / ${{ inputs.browser }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Write-path specs create and delete records. Refuse to point them at the
+      # shared public demo no matter how the run was configured.
+      - name: Guard write-path runs
+        if: ${{ inputs.allow_writes || inputs.suite == 'workflows' }}
+        env:
+          TARGET: ${{ inputs.base_url }}
+        run: |
+          case "$TARGET" in
+            "" | *opensource-demo.orangehrmlive.com*)
+              echo "::error::Write-path specs create and delete records. Set base_url to an instance you own — refusing to run them against the shared public demo."
+              exit 1
+              ;;
+          esac
+          echo "Write-path specs enabled against $TARGET"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve run arguments
+        id: args
+        env:
+          SUITE: ${{ inputs.suite }}
+          BROWSER: ${{ inputs.browser }}
+        run: |
+          # The `setup` project declares no `use` block, so it always runs in
+          # chromium. Every configuration therefore needs chromium installed,
+          # even a firefox- or webkit-only run.
+          case "$BROWSER" in
+            all)     projects="--project=setup --project=chromium --project=firefox --project=webkit"
+                     browsers="chromium firefox webkit" ;;
+            chromium) projects="--project=setup --project=chromium"
+                     browsers="chromium" ;;
+            *)       projects="--project=setup --project=$BROWSER"
+                     browsers="chromium $BROWSER" ;;
+          esac
+
+          # Flag and pattern are kept separate so the pattern can stay quoted at
+          # the call site — `@journey|@workflow` would otherwise be read as a pipe.
+          case "$SUITE" in
+            smoke)      flag="--grep";        pattern="@smoke" ;;
+            journeys)   flag="--grep";        pattern="@journey" ;;
+            workflows)  flag="--grep";        pattern="@workflow" ;;
+            functional) flag="--grep-invert"; pattern="@journey|@workflow" ;;
+            *)          flag="--grep-invert"; pattern="@workflow" ;;
+          esac
+
+          {
+            echo "projects=$projects"
+            echo "browsers=$browsers"
+            echo "flag=$flag"
+            echo "pattern=$pattern"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ steps.args.outputs.browsers }}
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps ${{ steps.args.outputs.browsers }}
+
+      - name: Run tests
+        env:
+          # Blank falls through to the default in playwright.config.ts.
+          BASE_URL: ${{ inputs.base_url }}
+          # Optional — only needed for a private instance. The public demo's
+          # credentials are printed on its own login page and are the fallback.
+          ORANGEHRM_USERNAME: ${{ secrets.ORANGEHRM_USERNAME }}
+          ORANGEHRM_PASSWORD: ${{ secrets.ORANGEHRM_PASSWORD }}
+          E2E_ALLOW_WRITES: ${{ (inputs.allow_writes || inputs.suite == 'workflows') && '1' || '' }}
+          PROJECTS: ${{ steps.args.outputs.projects }}
+          FLAG: ${{ steps.args.outputs.flag }}
+          PATTERN: ${{ steps.args.outputs.pattern }}
+        # $PROJECTS is intentionally unquoted so it splits into several --project
+        # flags; $PATTERN is quoted so its alternation is not shell-interpreted.
+        run: npx playwright test $PROJECTS "$FLAG" "$PATTERN"
+
+      # Traces and videos can contain session cookies and request headers. They
+      # are readable by anyone with read access to the repository, so retention is
+      # kept short — see the CI section of the README before pointing this at a
+      # private instance.
+      - name: Upload report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ inputs.suite }}-${{ inputs.browser }}-${{ github.run_attempt }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore
