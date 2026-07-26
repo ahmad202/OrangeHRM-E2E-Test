@@ -24,6 +24,19 @@ npm run report                    # open the last HTML report
 Point at a different instance with `BASE_URL`, `ORANGEHRM_USERNAME` and
 `ORANGEHRM_PASSWORD`.
 
+`BASE_URL` accepts **any URL on the instance**, not just its origin — a login URL
+copied out of the browser bar works as well as a bare origin, since every route in
+the suite is an absolute path and only the origin is ever used:
+
+```bash
+BASE_URL=https://hr.example.com                             npm test
+BASE_URL=https://hr.example.com/web/index.php/auth/login    npm test   # same thing
+```
+
+A value that isn't a parseable URL is a hard error rather than a silent fallback —
+quietly testing the public demo when you meant your own instance is the worse
+failure.
+
 **Status:** green across Chromium, Firefox and WebKit — a representative run is
 169 passing / 12 skipped in ~4 min.
 
@@ -117,7 +130,7 @@ points at an instance you own.
 | --- | --- | --- |
 | `suite` | `all` | `all` · `read-only` · `smoke` · `journeys` · `functional` · `workflows` |
 | `browser` | `chromium` | `chromium` · `firefox` · `webkit` · `all` |
-| `base_url` | *(blank)* | Blank falls through to the public demo |
+| `base_url` | the public demo login URL | Any URL on the instance; normalised to its origin |
 | `allow_writes` | `false` | Enables the write-path specs; rejected against the public demo |
 
 What each `suite` selects, verified with `--list` against a single browser:

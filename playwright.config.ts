@@ -15,6 +15,30 @@ if (process.env.CI) {
   reporters.push(['list']);
 }
 
+const DEFAULT_INSTANCE = 'https://opensource-demo.orangehrmlive.com/web/index.php/auth/login';
+
+/**
+ * Resolves the target instance to an origin.
+ *
+ * Accepts any URL belonging to the instance, not just its origin — a login URL
+ * copied straight out of the browser bar, a trailing slash, or a bare origin all
+ * normalise to the same thing. Every route in this suite is an absolute path, so
+ * only the origin is ever used.
+ *
+ * An unparseable value is a hard error rather than a silent fallback: quietly
+ * testing the public demo when you meant your own instance is worse than failing.
+ */
+function resolveBaseURL(raw: string | undefined): string {
+  const value = raw?.trim() || DEFAULT_INSTANCE;
+  try {
+    return new URL(value).origin;
+  } catch {
+    throw new Error(
+      `BASE_URL is not a valid URL: "${value}". Include the scheme, e.g. https://hr.example.com`,
+    );
+  }
+}
+
 /**
  * The system under test is the public OrangeHRM open-source demo. It is a shared,
  * internet-facing sandbox, which drives three config decisions:
@@ -36,7 +60,7 @@ export default defineConfig({
   },
   reporter: reporters,
   use: {
-    baseURL: process.env.BASE_URL || 'https://opensource-demo.orangehrmlive.com',
+    baseURL: resolveBaseURL(process.env.BASE_URL),
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',

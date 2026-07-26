@@ -30,9 +30,9 @@ on:
         default: chromium
         options: [chromium, firefox, webkit, all]
       base_url:
-        description: 'Target instance (blank = public OrangeHRM demo)'
+        description: 'Target instance — any URL on it; normalised to its origin'
         type: string
-        default: ''
+        default: 'https://opensource-demo.orangehrmlive.com/web/index.php/auth/login'
       allow_writes:
         description: 'Enable write-path specs (rejected against the public demo)'
         type: boolean
@@ -129,7 +129,8 @@ jobs:
 
       - name: Run tests
         env:
-          # Blank falls through to the default in playwright.config.ts.
+          # Any URL on the instance works; playwright.config.ts reduces it to an
+          # origin. Blank falls through to the same default.
           BASE_URL: ${{ inputs.base_url }}
           # Optional — only needed for a private instance. The public demo's
           # credentials are printed on its own login page and are the fallback.
