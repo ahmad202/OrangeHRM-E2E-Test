@@ -115,20 +115,31 @@ points at an instance you own.
 
 | Input | Default | Notes |
 | --- | --- | --- |
-| `suite` | `read-only` | `read-only` (everything bar the write path) · `smoke` · `journeys` · `functional` · `workflows` |
+| `suite` | `all` | `all` · `read-only` · `smoke` · `journeys` · `functional` · `workflows` |
 | `browser` | `chromium` | `chromium` · `firefox` · `webkit` · `all` |
 | `base_url` | *(blank)* | Blank falls through to the public demo |
 | `allow_writes` | `false` | Enables the write-path specs; rejected against the public demo |
 
-What each `suite` selects, verified with `--list`:
+What each `suite` selects, verified with `--list` against a single browser:
 
-| Suite | Tests (incl. the 1 setup test) |
-| --- | --- |
-| `read-only` | 57 |
-| `functional` | 37 |
-| `journeys` | 21 |
-| `smoke` | 7 |
-| `workflows` | 5 |
+| Suite | Tests (incl. the 1 setup test) | Selects |
+| --- | --- | --- |
+| `all` | 61 | Everything — identical to running with no filter |
+| `read-only` | 57 | Everything bar the write path |
+| `functional` | 37 | Screen-level specs, no journeys |
+| `journeys` | 21 | `@journey` |
+| `smoke` | 7 | `@smoke` |
+| `workflows` | 5 | `@workflow` only |
+
+`all` and `read-only` differ only in how the 4 write-path specs are reported. Both
+leave your data alone unless `allow_writes` is set:
+
+- `all` **selects** them, and they skip themselves via `E2E_ALLOW_WRITES` — so the
+  run shows the full inventory, with the write path visibly skipped.
+- `read-only` **filters them out**, so the run is free of skip noise.
+
+Pick `all` when you want to see everything that exists; `read-only` when you want a
+clean pass/fail signal.
 
 ### Two things the pipeline gets right that are easy to miss
 
@@ -168,8 +179,10 @@ git commit -m "Playwright E2E suite for OrangeHRM"
 gh repo create <name> --private --source=. --push
 ```
 
-Then open *Actions → E2E → Run workflow*. The first run should be
-`suite: read-only`, `browser: chromium` — roughly 2–3 minutes.
+Then open *Actions → E2E → Run workflow*. The defaults — `suite: all`,
+`browser: chromium` — run every test case in roughly 2–3 minutes, with the
+write-path specs skipped. Switch `browser` to `all` for the full cross-browser
+sweep (~4–6 min).
 
 ## What the live application actually does
 

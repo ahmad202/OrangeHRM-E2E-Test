@@ -16,13 +16,14 @@ on:
       suite:
         description: 'Which tests to run'
         type: choice
-        default: read-only
+        default: all
         options:
+          - all # every test case; write-path specs self-skip unless allow_writes
           - read-only # everything except the write-path workflows
           - smoke # @smoke — critical path only
           - journeys # @journey — business journeys
           - functional # screen-level specs, no journeys
-          - workflows # @workflow — write path, needs allow_writes
+          - workflows # @workflow — write path only, needs allow_writes
       browser:
         description: 'Browser project'
         type: choice
@@ -96,12 +97,18 @@ jobs:
 
           # Flag and pattern are kept separate so the pattern can stay quoted at
           # the call site — `@journey|@workflow` would otherwise be read as a pipe.
+          #
+          # `all` uses a match-everything pattern rather than omitting the flags,
+          # which keeps the invocation a fixed shape for every suite. Write-path
+          # specs are still selected but skip themselves unless allow_writes is
+          # set, so they show up as skipped rather than being silently filtered.
           case "$SUITE" in
             smoke)      flag="--grep";        pattern="@smoke" ;;
             journeys)   flag="--grep";        pattern="@journey" ;;
             workflows)  flag="--grep";        pattern="@workflow" ;;
             functional) flag="--grep-invert"; pattern="@journey|@workflow" ;;
-            *)          flag="--grep-invert"; pattern="@workflow" ;;
+            read-only)  flag="--grep-invert"; pattern="@workflow" ;;
+            *)          flag="--grep";        pattern=".*" ;;
           esac
 
           {
